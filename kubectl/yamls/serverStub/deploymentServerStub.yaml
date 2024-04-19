@@ -1,0 +1,26 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: app-deployment
+  labels:
+    app: app
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: app
+  template:
+    metadata:
+      annotations:
+        prometheus.io/path: /metrics
+        prometheus.io/port: "443"
+        prometheus.io/scrape: "true"
+      labels:
+        app: app
+    spec:
+      containers:
+      - name: app
+        imagePullPolicy: Always
+        image: cr.yandex/crplcjja2vnksfnhmpdj/server:latest
+        ports:
+        - containerPort: 443

@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: server-stub-config-map
+  namespace: prod
+  labels:
+    app: server-stub
+    environment: prod
+data:
+  serverPort: "8080"
+  

@@ -1,0 +1,25 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: alb-demo-tls
+  annotations:
+    ingress.alb.yc.io/subnets: e9bns96vtg0645o8ftfc
+    ingress.alb.yc.io/security-groups: enppgs5iurs3qubj8b1b
+    ingress.alb.yc.io/external-ipv4-address: auto
+    ingress.alb.yc.io/group-name: my-ingress-group
+spec:
+  tls:
+    - hosts:
+        - institute.diploma.com
+      secretName: yc-certmgr-cert-id-fpqibjv6mh6nd83riv0f
+  rules:
+    - host: institute.diploma.com
+      http:
+        paths:
+          - pathType: Prefix
+            path: "/"
+            backend:
+              service:
+                name: app
+                port:
+                  number: 80

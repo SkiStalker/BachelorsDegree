@@ -1,0 +1,2 @@
+aiohttp~=3.9.3
+aiohttp_prometheus_exporter~=0.2.4
