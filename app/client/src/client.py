@@ -1,7 +1,4 @@
 import asyncio
-import ssl
-
-import requests
 import urllib3
 
 import aiohttp
