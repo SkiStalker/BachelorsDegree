@@ -14,7 +14,7 @@ spec:
       annotations:
         prometheus.io/path: /metrics
         prometheus.io/port: "443"
-        prometheus.io/scrape: "true"
+        prometheus.io/scrape: "enable"
       labels:
         app: app
     spec:
