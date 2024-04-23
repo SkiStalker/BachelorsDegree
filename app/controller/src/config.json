@@ -1,0 +1,67 @@
+{
+  "one_time_change": {
+    "step": 5
+  },
+  "iteration_delay": 1000,
+  "rules": [
+    {
+      "type": "date",
+      "values": [
+        {
+          "value": {
+            "year": "2024",
+            "month": "04",
+            "day": "23"
+          },
+          "replicas": 2
+        },
+        {
+          "value": {
+            "year": "2024",
+            "month": "05",
+            "day": "23",
+            "hour": "01",
+            "minute": "30"
+          },
+          "replicas": 2
+        }
+      ]
+    },
+    {
+      "type": "workload",
+      "metric": "request_per_second",
+      "values": [
+        {
+          "value": 20,
+          "replicas": 1
+        },
+        {
+          "value": 40,
+          "replicas": 2
+        },
+        {
+          "value": 60,
+          "replicas": 3
+        }
+      ]
+    },
+    {
+      "type": "workload",
+      "metric": "total_cpu",
+      "values": [
+        {
+          "value": 60,
+          "replicas": 1
+        },
+        {
+          "value": 70,
+          "replicas": 2
+        },
+        {
+          "value": 80,
+          "replicas": 3
+        }
+      ]
+    }
+  ]
+}
