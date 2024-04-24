@@ -32,15 +32,15 @@ routes = web.RouteTableDef()
 
 
 @routes.post('/config')
-async def post_config(request):
+async def post_config(request: web.Request) -> web.Response:
     with open("./config.json", "w") as cfg_f:
-        cfg_f.write(request.body)
+        cfg_f.write(await request.text())
     is_config_changed.set(True)
     return web.Response()
 
 
 @routes.get('/config')
-async def get_config(request):
+async def get_config(request: web.Request):
     if not os.path.isfile("./config.json"):
         return web.Response(status=404)
 
@@ -51,21 +51,22 @@ async def get_config(request):
 
 
 @routes.get('/requests_stat')
-async def get_requests_stat(request):
+async def get_requests_stat(request: web.Request):
     prom = app[prom_api_client]
 
-    res = prom.custom_query('increase(aiohttp_request_duration_seconds_count{path_template = "/"}[1m])')
+    res = prom.custom_query(
+        f'increase(aiohttp_request_duration_seconds_count{{path_template = "/"}}[{request.query["interval"]}])')
 
-    return web.Response(text="")
+    return web.json_response({"values": res["values"]})
 
 
 @routes.get('/cpu_stat')
-async def get_cpu_stat(request):
+async def get_cpu_stat(request: web.Request):
     prom = app[prom_api_client]
 
-    res = prom.custom_query('process_cpu_seconds_total[1m]')
+    res = prom.custom_query(f'process_cpu_seconds_total[{request.query["interval"]}]')
 
-    return web.Response(text="")
+    return web.json_response({"values": res["values"]})
 
 
 def read_cfg():
@@ -138,7 +139,8 @@ def listen_prometheus(cur_app: web.Application):
                  prom.custom_query(f"process_cpu_seconds_total[{cfg['iteration_delay']}ms]") for j in i["values"]])
 
             req_cur_val = statistics.fmean([float(j[1]) for i in prom.custom_query(
-                f'increase(aiohttp_request_duration_seconds_count{{path_template = "/"}}[{cfg["iteration_delay"]}ms])') for j in
+                f'increase(aiohttp_request_duration_seconds_count{{path_template = "/"}}[{cfg["iteration_delay"]}ms])')
+                                            for j in
                                             i["values"]])
 
             cp_nec_pods_count = None
