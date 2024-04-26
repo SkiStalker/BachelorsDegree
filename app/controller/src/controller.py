@@ -31,15 +31,15 @@ is_config_changed = ContextVar('is_config_changed', default=True)
 routes = web.RouteTableDef()
 
 
-@routes.post('/config')
+@routes.post('/api/v1/config')
 async def post_config(request: web.Request) -> web.Response:
     with open("./config.json", "w") as cfg_f:
         cfg_f.write(await request.text())
     is_config_changed.set(True)
-    return web.Response()
+    return web.json_response({"message": "ok"})
 
 
-@routes.get('/config')
+@routes.get('/api/v1/config')
 async def get_config(request: web.Request):
     if not os.path.isfile("./config.json"):
         return web.Response(status=404)
@@ -50,23 +50,28 @@ async def get_config(request: web.Request):
     return web.json_response(cfg)
 
 
-@routes.get('/requests_stat')
+@routes.get('/api/v1/requests_stat')
 async def get_requests_stat(request: web.Request):
     prom = app[prom_api_client]
 
     res = prom.custom_query(
         f'increase(aiohttp_request_duration_seconds_count{{path_template = "/"}}[{request.query["interval"]}])')
 
-    return web.json_response({"values": res["values"]})
+    return web.json_response({"values": res})
 
 
-@routes.get('/cpu_stat')
+@routes.get('/api/v1/cpu_stat')
 async def get_cpu_stat(request: web.Request):
     prom = app[prom_api_client]
 
     res = prom.custom_query(f'process_cpu_seconds_total[{request.query["interval"]}]')
 
-    return web.json_response({"values": res["values"]})
+    return web.json_response({"values": res})
+
+
+@routes.get("/api/v1/pods_count")
+async def get_pods_count(request: web.Request):
+    return web.json_response({"pods_count": kubectl_get_pods_count()})
 
 
 def read_cfg():
@@ -97,9 +102,11 @@ def read_cfg():
 
         elif rule["type"] == "workload":
             if rule["metric"] == "request_per_second":
-                requests_rules = rule["values"].sort(key=lambda x: x["value"])
+                rule["values"].sort(key=lambda x: x["value"])
+                requests_rules = rule["values"]
             elif rule["metric"] == "total_cpu":
-                cpu_rules = rule["values"].sort(key=lambda x: x["value"])
+                rule["values"].sort(key=lambda x: x["value"])
+                cpu_rules = rule["values"]
             else:
                 logger.warning(f"Unknown workload rule type '{rule['metric']}'")
         else:
@@ -108,11 +115,21 @@ def read_cfg():
     return cfg, step, change_delay, date_rules, cpu_rules, requests_rules
 
 
+def kubectl_get_pods_count():
+    proc_res = subprocess.run("kubectl get pods -l=app=app -o jsonpath={.items[*].metadata.generateName}",
+                              capture_output=True)
+
+    proc_resp = proc_res.stdout.decode()
+
+    return len(proc_resp.split(" "))
+
+
 @async_wrap
 def listen_prometheus(cur_app: web.Application):
     prom = cur_app[prom_api_client]
 
     cfg, step, change_delay, date_rules, cpu_rules, requests_rules = read_cfg()
+    is_config_changed.set(False)
 
     while True:
         try:
@@ -120,12 +137,7 @@ def listen_prometheus(cur_app: web.Application):
                 cfg, step, change_delay, date_rules, cpu_rules, requests_rules = read_cfg()
                 is_config_changed.set(False)
 
-            proc_res = subprocess.run("kubectl get pods -l=app=app -o jsonpath={.items[*].metadata.generateName}",
-                                      capture_output=True)
-
-            proc_resp = proc_res.stdout.decode()
-
-            cur_pods_count = len(proc_resp.split(" "))
+            cur_pods_count = kubectl_get_pods_count()
 
             dt_nec_pods_count = None
 
@@ -133,40 +145,78 @@ def listen_prometheus(cur_app: web.Application):
             for dt in date_rules:
                 if re.search(dt, dt_now) is not None:
                     dt_nec_pods_count = date_rules[dt]
+                    break
 
-            cp_cur_val = statistics.fmean(
-                [float(j[1]) for i in
-                 prom.custom_query(f"process_cpu_seconds_total[{cfg['iteration_delay']}ms]") for j in i["values"]])
+            logger.info(f"Date rule selected: {dt_nec_pods_count}")
 
-            req_cur_val = statistics.fmean([float(j[1]) for i in prom.custom_query(
-                f'increase(aiohttp_request_duration_seconds_count{{path_template = "/"}}[{cfg["iteration_delay"]}ms])')
-                                            for j in
-                                            i["values"]])
+            cp_vals = [float(i["values"][-1][1]) for i in
+                       prom.custom_query(f"process_cpu_seconds_total[{cfg['iteration_delay']}ms]")]
+
+            if len(cp_vals) == 0:
+                cp_vals.append(0)
+
+            cp_cur_val = statistics.fmean(cp_vals)
+
+            req_vals = [float(i["values"][-1][1]) for i in prom.custom_query(
+                f'increase(aiohttp_request_duration_seconds_count{{path_template = "/"}}[{cfg["iteration_delay"]}ms])')]
+
+            if len(req_vals) == 0:
+                req_vals.append(0)
+
+            req_cur_val = statistics.fmean(req_vals)
 
             cp_nec_pods_count = None
             req_nec_pods_count = None
 
             for cp in cpu_rules:
-                if cp <= cp_cur_val:
-                    cp_nec_pods_count = cp
+                if cp["value"] <= cp_cur_val:
+                    cp_nec_pods_count = cp["replicas"]
                 else:
                     break
+
+            logger.info(f"CPU rule selected: {cp_nec_pods_count}")
 
             for req in requests_rules:
-                if req <= req_cur_val:
-                    req_nec_pods_count = req
+                if req["value"] <= req_cur_val:
+                    req_nec_pods_count = req["replicas"]
                 else:
                     break
 
-            res_nec_pods_count = max(dt_nec_pods_count or 0, req_nec_pods_count or 0, cp_nec_pods_count or 0)
+            logger.info(f"Requests rule selected: {cp_nec_pods_count}")
+
+            match cfg["change_policy"]:
+                case "max":
+                    res_nec_pods_count = max(dt_nec_pods_count or 0, req_nec_pods_count or 0, cp_nec_pods_count or 0)
+                case "min":
+                    res_nec_pods_count = min(dt_nec_pods_count or float("inf"), req_nec_pods_count or float("inf"),
+                                             cp_nec_pods_count or float("inf"))
+                case "avg":
+                    avg_list = []
+                    if dt_nec_pods_count:
+                        avg_list.append(dt_nec_pods_count)
+                    if req_nec_pods_count:
+                        avg_list.append(req_nec_pods_count)
+                    if cp_nec_pods_count:
+                        avg_list.append(cp_nec_pods_count)
+
+                    if len(avg_list) == 0:
+                        res_nec_pods_count = cur_pods_count
+                    else:
+                        res_nec_pods_count = statistics.fmean(avg_list)
+                case _:
+                    res_nec_pods_count = cur_pods_count
+
+            logger.info(f"Selected pods count {res_nec_pods_count}")
 
             if step is not None and change_delay is not None:
                 if cur_pods_count < res_nec_pods_count:
                     cur_pods_count = min(cur_pods_count + step, res_nec_pods_count)
-                    subprocess.run(f"kubectl scale deployment app-deployment --replicas={cur_pods_count}")
+                    logger.info(f"Pods count reduced to {cur_pods_count}")
+                    # subprocess.run(f"kubectl scale deployment app-deployment --replicas={cur_pods_count}")
                 else:
                     cur_pods_count = max(cur_pods_count - step, res_nec_pods_count)
-                    subprocess.run(f"kubectl scale deployment app-deployment --replicas={cur_pods_count}")
+                    logger.info(f"Pods count increased to {cur_pods_count}")
+                    # subprocess.run(f"kubectl scale deployment app-deployment --replicas={cur_pods_count}")
 
             time.sleep(cfg["iteration_delay"] / 1000.0)
         except asyncio.CancelledError:

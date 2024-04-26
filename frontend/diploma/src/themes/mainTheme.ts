@@ -16,6 +16,7 @@ export const mainTheme = createTheme({
                     '&:hover, :focus, :active, :target, :visited': {
                         borderRadius: "10px"
                     },
+                    transition: "none"
                 }
             }
         }

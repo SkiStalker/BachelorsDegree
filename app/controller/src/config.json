@@ -2,7 +2,8 @@
   "one_time_change": {
     "step": 5
   },
-  "iteration_delay": 1000,
+  "change_policy": "max",
+  "iteration_delay": 2000,
   "rules": [
     {
       "type": "date",

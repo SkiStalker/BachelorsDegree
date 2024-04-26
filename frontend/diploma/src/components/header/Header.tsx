@@ -20,10 +20,7 @@ const Header = () => {
         {
             path.slice(1).map((item, ind, arr) => {
                 if (ind !== arr.length - 1) {
-                    return <Link underline={"hover"} key={ind} color="inherit"
-                                 onClick={async ()=>{
-                                     await router.push(breadcrumbsMap[item as keyof typeof breadcrumbsMap]?.link || "/")
-                                 }}>
+                    return <Link underline={"hover"} key={ind} color="inherit" href={breadcrumbsMap[item as keyof typeof breadcrumbsMap]?.link || "/"}>
                         <Typography fontSize={20}>
                             {breadcrumbsMap[item as keyof typeof breadcrumbsMap]?.name || item}
                         </Typography>
