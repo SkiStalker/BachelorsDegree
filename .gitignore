@@ -1,2 +1,7 @@
 /.idea
 /.venv
+/secrets
+**/*.csr
+**/*.crt
+**/*.pem
+**/*.key

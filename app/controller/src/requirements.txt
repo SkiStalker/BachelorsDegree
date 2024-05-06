@@ -1,0 +1,4 @@
+aiohttp~=3.9.5
+prometheus-api-client~=0.5.5
+kubernetes~=29.0.0
+cffi~=1.16.0

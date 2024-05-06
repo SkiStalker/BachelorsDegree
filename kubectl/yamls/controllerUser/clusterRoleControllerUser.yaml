@@ -1,0 +1,14 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: controllerUserRole
+rules:
+  - apiGroups: [ "" ]
+    resources:
+      - pods
+    verbs: [ get, watch, list ]
+  - apiGroups: [ "apps" ]
+    resources:
+      - deployments
+      - deployments/scale
+    verbs: [ get, list, patch ]

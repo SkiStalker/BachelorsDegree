@@ -4,7 +4,7 @@ export const breadcrumbsMap = {
         name: "Домашняя"
     },
     "config" : {
-        link: "/config",
+        link: "/config.yaml",
         name: "Конфигурация"
     }
 }

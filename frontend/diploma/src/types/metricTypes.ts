@@ -1,5 +1,5 @@
 export interface MetricInterval {
-    "interval": "5s" | "1m" | "1h" | "1d"
+    "interval": string
 }
 
 
@@ -14,7 +14,7 @@ export interface MetricResponse {
             "kubernetes_pod_name": string,
             "pod_template_hash": string
         }
-        "values": string & number[]
+        "value": string & number[]
     }[]
 }
 
@@ -24,7 +24,7 @@ export interface PodsCountResponse {
 
 
 export interface ParseMetric {
-    "data": { [_: string]: number }[]
+    "data": { [_: string]: number | string }[]
 
     "pod_names": string[]
 

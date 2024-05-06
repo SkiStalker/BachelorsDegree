@@ -1,0 +1,18 @@
+apiVersion: v1
+clusters:
+- cluster:
+    certificate-authority-data: $CLUSTER_CERTIFICATE_AUTHORITY_DATA
+    server: $KUBE_SERVER_HOST
+  name: $CLUSTER_NAME
+contexts:
+- context:
+    cluster: $CLUSTER_NAME
+    user: controller-user
+  name: yc-diploma
+current-context: yc-diploma
+kind: Config
+preferences: {}
+users:
+- name: controller-user
+  user:
+    token: $USER_TOKEN

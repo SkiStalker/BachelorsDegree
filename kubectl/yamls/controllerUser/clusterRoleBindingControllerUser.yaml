@@ -1,0 +1,12 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: controllerUserClusterRoleBinding
+subjects:
+  - kind: ServiceAccount
+    name: controller-user
+    namespace: default
+roleRef:
+  kind: ClusterRole
+  name: controllerUserRole
+  apiGroup: rbac.authorization.k8s.io

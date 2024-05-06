@@ -3,13 +3,15 @@ import datetime
 import json
 import logging
 import os
-import subprocess
 import sys
 import time
 from contextvars import ContextVar
 from functools import wraps, partial
 import re
 import statistics
+
+import kubernetes
+from kubernetes import client, config
 
 import prometheus_api_client
 from aiohttp import web
@@ -26,7 +28,21 @@ def async_wrap(func):
     return run
 
 
-is_config_changed = ContextVar('is_config_changed', default=True)
+class ValueWrapper:
+    def __init__(self, value):
+        self._value = value
+
+    @property
+    def value(self):
+        return self._value
+
+    @value.setter
+    def value(self, value):
+        self._value = value
+
+
+is_config_changed = ContextVar('is_config_changed', default=ValueWrapper(True))
+is_alive = ContextVar('is_alive', default=ValueWrapper(True))
 
 routes = web.RouteTableDef()
 
@@ -35,7 +51,7 @@ routes = web.RouteTableDef()
 async def post_config(request: web.Request) -> web.Response:
     with open("./config.json", "w") as cfg_f:
         cfg_f.write(await request.text())
-    is_config_changed.set(True)
+    is_config_changed.get().value = True
     return web.json_response({"message": "ok"})
 
 
@@ -55,7 +71,7 @@ async def get_requests_stat(request: web.Request):
     prom = app[prom_api_client]
 
     res = prom.custom_query(
-        f'increase(aiohttp_request_duration_seconds_count{{path_template = "/"}}[{request.query["interval"]}])')
+        'increase(aiohttp_requests_total{path_template="/"}[1m])')
 
     return web.json_response({"values": res})
 
@@ -64,7 +80,7 @@ async def get_requests_stat(request: web.Request):
 async def get_cpu_stat(request: web.Request):
     prom = app[prom_api_client]
 
-    res = prom.custom_query(f'process_cpu_seconds_total[{request.query["interval"]}]')
+    res = prom.custom_query('increase(process_cpu_seconds_total[1m])')
 
     return web.json_response({"values": res})
 
@@ -93,7 +109,7 @@ def read_cfg():
 
     for rule in cfg["rules"]:
         if rule["type"] == "date":
-
+            rule["values"].sort(key=lambda x: len(x["value"]), reverse=True)
             date_rules.update({
                 f"{obj['value'].get('year', '(.*?)')}-{obj['value'].get('month', '(.*?)')}"
                 f"-{obj['value'].get('day', '(.*?)')} {obj['value'].get('hour', '(.*?)')}"
@@ -116,12 +132,9 @@ def read_cfg():
 
 
 def kubectl_get_pods_count():
-    proc_res = subprocess.run("kubectl get pods -l=app=app -o jsonpath={.items[*].metadata.generateName}",
-                              capture_output=True)
-
-    proc_resp = proc_res.stdout.decode()
-
-    return len(proc_resp.split(" "))
+    res: kubernetes.client.models.v1_pod_list.V1PodList = app[kube_core_api_client].list_namespaced_pod(
+        namespace="default", label_selector="app=app")
+    return len(res.items)
 
 
 @async_wrap
@@ -129,15 +142,22 @@ def listen_prometheus(cur_app: web.Application):
     prom = cur_app[prom_api_client]
 
     cfg, step, change_delay, date_rules, cpu_rules, requests_rules = read_cfg()
-    is_config_changed.set(False)
+
+    is_config_changed.get().value = False
 
     while True:
         try:
-            if is_config_changed.get() is True:
+
+            if is_alive.get().value is False:
+                break
+
+            if is_config_changed.get().value is True:
                 cfg, step, change_delay, date_rules, cpu_rules, requests_rules = read_cfg()
-                is_config_changed.set(False)
+                is_config_changed.get().value = False
 
             cur_pods_count = kubectl_get_pods_count()
+
+            logger.info(f"Current pods count {cur_pods_count}")
 
             dt_nec_pods_count = None
 
@@ -149,21 +169,25 @@ def listen_prometheus(cur_app: web.Application):
 
             logger.info(f"Date rule selected: {dt_nec_pods_count}")
 
-            cp_vals = [float(i["values"][-1][1]) for i in
-                       prom.custom_query(f"process_cpu_seconds_total[{cfg['iteration_delay']}ms]")]
+            cp_vals = [(float(i["value"][1]) / 60000) * cfg["iteration_delay"] for i in
+                       prom.custom_query("increase(process_cpu_seconds_total[1m])")]
 
             if len(cp_vals) == 0:
                 cp_vals.append(0)
 
             cp_cur_val = statistics.fmean(cp_vals)
 
-            req_vals = [float(i["values"][-1][1]) for i in prom.custom_query(
-                f'increase(aiohttp_request_duration_seconds_count{{path_template = "/"}}[{cfg["iteration_delay"]}ms])')]
+            logger.info(f"CPU current: {cp_cur_val}")
+
+            req_vals = [(float(i["value"][1]) / 60000 * cfg["iteration_delay"]) for i in prom.custom_query(
+                'increase(aiohttp_requests_total{path_template="/"}[1m])')]
 
             if len(req_vals) == 0:
                 req_vals.append(0)
 
-            req_cur_val = statistics.fmean(req_vals)
+            req_cur_val = sum(req_vals)
+
+            logger.info(f"Requests current: {req_cur_val}")
 
             cp_nec_pods_count = None
             req_nec_pods_count = None
@@ -202,7 +226,7 @@ def listen_prometheus(cur_app: web.Application):
                     if len(avg_list) == 0:
                         res_nec_pods_count = cur_pods_count
                     else:
-                        res_nec_pods_count = statistics.fmean(avg_list)
+                        res_nec_pods_count = round(statistics.fmean(avg_list))
                 case _:
                     res_nec_pods_count = cur_pods_count
 
@@ -210,30 +234,42 @@ def listen_prometheus(cur_app: web.Application):
 
             if step is not None and change_delay is not None:
                 if cur_pods_count < res_nec_pods_count:
-                    cur_pods_count = min(cur_pods_count + step, res_nec_pods_count)
+                    cur_pods_count = max(min(cur_pods_count + step, res_nec_pods_count), 1)
                     logger.info(f"Pods count reduced to {cur_pods_count}")
-                    # subprocess.run(f"kubectl scale deployment app-deployment --replicas={cur_pods_count}")
-                else:
-                    cur_pods_count = max(cur_pods_count - step, res_nec_pods_count)
+                    app[kube_apps_api_client].patch_namespaced_deployment_scale("app-deployment", "default",
+                                                                                {'spec': {'replicas': cur_pods_count}})
+                elif cur_pods_count > res_nec_pods_count:
+                    cur_pods_count = max(max(cur_pods_count - step, res_nec_pods_count), 1)
                     logger.info(f"Pods count increased to {cur_pods_count}")
-                    # subprocess.run(f"kubectl scale deployment app-deployment --replicas={cur_pods_count}")
+                    app[kube_apps_api_client].patch_namespaced_deployment_scale("app-deployment", "default",
+                                                                                {'spec': {'replicas': cur_pods_count}})
 
             time.sleep(cfg["iteration_delay"] / 1000.0)
-        except asyncio.CancelledError:
-            break
         except Exception as e:
             logger.error(e)
 
 
 async def background_tasks(cur_app: web.Application):
     app[prom_api_client] = prometheus_api_client.PrometheusConnect(
-        os.environ.get("PROMETHEUS_HOST", "http://localhost:8080"), disable_ssl=True, )
+        os.environ.get("PROMETHEUS_HOST", "http://localhost:8080"), disable_ssl=True)
+
     app[prometheus_listener] = asyncio.create_task(listen_prometheus(cur_app))
+
+    config.load_config()
+
+    app[kube_apps_api_client] = client.AppsV1Api()
+    app[kube_core_api_client] = client.CoreV1Api()
 
     yield
 
+    is_alive.get().value = False
+
     app[prometheus_listener].cancel()
+
     await app[prometheus_listener]
+
+    app[kube_apps_api_client].api_client.close()
+    app[kube_core_api_client].api_client.close()
 
 
 if __name__ == '__main__':
@@ -254,8 +290,12 @@ if __name__ == '__main__':
     prometheus_listener = web.AppKey("prometheus_listener", asyncio.Task[None])
     prom_api_client = web.AppKey("prom_api_client", prometheus_api_client.PrometheusConnect)
 
+    kube_apps_api_client = web.AppKey("kube_apps_api_client", client.AppsV1Api)
+    kube_core_api_client = web.AppKey("kube_core_api_client", client.CoreV1Api)
+
     app.cleanup_ctx.append(background_tasks)
 
     app.add_routes(routes)
 
-    web.run_app(app, host='localhost', port=8000)
+    web.run_app(app, host=os.environ.get("CONTROLLER_HOST", 'localhost'),
+                port=int(os.environ.get("CONTROLLER_PORT", 8000)))

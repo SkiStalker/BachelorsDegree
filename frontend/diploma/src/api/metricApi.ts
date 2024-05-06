@@ -1,16 +1,12 @@
 import axios from "axios";
 import {MetricInterval, MetricResponse, PodsCountResponse} from "@/types/metricTypes";
 
-export const getRequestsPerTime = async (metricInterval: MetricInterval) => {
-    return axios.get<MetricResponse>("/api/v1/requests_stat", {
-        params: {...metricInterval}
-    })
+export const getRequestsPerTime =  async () => {
+    return axios.get<MetricResponse>("/api/v1/requests_stat")
 }
 
-export const getTotalCPUUsage = async (metricInterval: MetricInterval) => {
-    return axios.get<MetricResponse>("/api/v1/cpu_stat", {
-        params: {...metricInterval}
-    })
+export const getTotalCPUUsage = async () => {
+    return axios.get<MetricResponse>("/api/v1/cpu_stat")
 }
 
 export const getPodsCount = async () => {

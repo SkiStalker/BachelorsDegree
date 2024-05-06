@@ -4,18 +4,28 @@ import {MetricResponse, ParseMetric} from "@/types/metricTypes";
 import {getRequestsPerTime} from "@/api/metricApi";
 import {CartesianGrid, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis} from "recharts";
 import {parseMetricsResponseToData} from "@/tools/metricTools";
+import {merge} from "@/tools/arrayTools";
+import {timestampToDate} from "@/tools/timeTool";
 
 const RequestsPanel = () => {
-
-    const [curValue, setCurValue] = useState("1h")
 
 
     const [value, setValue] = useState<ParseMetric>({data: [], pod_names: []})
 
     useEffect(() => {
         const timer = setInterval(() => {
-                getRequestsPerTime({"interval": curValue as "5s" | "1m" | "1h" | "1d"}).then((data) => {
-                    setValue(parseMetricsResponseToData(data.data))
+                getRequestsPerTime().then((data) => {
+
+                    const t = parseMetricsResponseToData(data.data)
+                    if (t.data.length == 0) {
+                        t.data.push({"app-deployment": 0, date: timestampToDate(Date.now() / 1000)})
+
+                        if (value.pod_names.find((item)=>{return item == "app-deployment"}) == undefined) {
+                            t.pod_names.push("app-deployment")
+                        }
+                    }
+
+                    setValue({data: value.data.concat(t.data).slice(-50), pod_names: merge(value.pod_names, t.pod_names).slice(-50) })
                 }).catch((err) => {
                     console.log(err)
                 })
@@ -30,17 +40,8 @@ const RequestsPanel = () => {
 
     return (
         <Stack>
-            <FormControl>
-                <Select value={curValue} onChange={(e) => {
-                    setCurValue(e.target.value)
-                }} sx={{width: "10%", alignSelf: "flex-end"}}>
-                    <MenuItem value={"5s"}>Second</MenuItem>
-                    <MenuItem value={"1m"}>Minute</MenuItem>
-                    <MenuItem value={"1h"}>Hour</MenuItem>
-                    <MenuItem value={"1d"}>Day</MenuItem>
-                </Select>
-            </FormControl>
-            {value["data"].length > 0 ? <>            <ResponsiveContainer height={600} width={"100%"}>
+            {value["data"].length > 0 ? <>
+                <ResponsiveContainer height={600} width={"100%"}>
                 <LineChart data={value["data"]}>
                     <CartesianGrid/>
                     <XAxis dataKey={"date"}/>
