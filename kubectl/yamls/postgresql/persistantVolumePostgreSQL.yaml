@@ -21,4 +21,4 @@ spec:
         - key: kubernetes.io/hostname
           operator: In
           values:
-          - cl1563hbs5bv0aqov1sf-usuz
+          - cl1563hbs5bv0aqov1sf-ubub
