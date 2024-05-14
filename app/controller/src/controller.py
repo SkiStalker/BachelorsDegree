@@ -250,26 +250,26 @@ def listen_prometheus(cur_app: web.Application):
 
 
 async def background_tasks(cur_app: web.Application):
-    app[prom_api_client] = prometheus_api_client.PrometheusConnect(
+    cur_app[prom_api_client] = prometheus_api_client.PrometheusConnect(
         os.environ.get("PROMETHEUS_HOST", "http://localhost:8080"), disable_ssl=True)
 
-    app[prometheus_listener] = asyncio.create_task(listen_prometheus(cur_app))
+    cur_app[prometheus_listener] = asyncio.create_task(listen_prometheus(cur_app))
 
     config.load_config()
 
-    app[kube_apps_api_client] = client.AppsV1Api()
-    app[kube_core_api_client] = client.CoreV1Api()
+    cur_app[kube_apps_api_client] = client.AppsV1Api()
+    cur_app[kube_core_api_client] = client.CoreV1Api()
 
     yield
 
     is_alive.get().value = False
 
-    app[prometheus_listener].cancel()
+    cur_app[prometheus_listener].cancel()
 
-    await app[prometheus_listener]
+    await cur_app[prometheus_listener]
 
-    app[kube_apps_api_client].api_client.close()
-    app[kube_core_api_client].api_client.close()
+    cur_app[kube_apps_api_client].api_client.close()
+    cur_app[kube_core_api_client].api_client.close()
 
 
 if __name__ == '__main__':
