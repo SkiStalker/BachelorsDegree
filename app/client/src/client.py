@@ -5,6 +5,7 @@ import os
 import uuid
 import random
 from asyncio import Future
+import datetime
 
 import urllib3
 
@@ -15,16 +16,20 @@ urllib3.disable_warnings()
 
 @dataclasses.dataclass
 class Automobile:
-    auto_id: str = str(uuid.uuid4())
+    auto_id: str
+    driver_id: str
+    position: tuple[float, float]
     fuel: float = 100
     balance: float = 10000
     velocity: float = 0
-    position: tuple[float, float] = (random.randint(-180, 180), random.randint(-85, 85))
 
 
-async def process():
+async def process(ind: int):
+    r = random.Random(datetime.datetime.now().timestamp() + ind)
     async with aiohttp.ClientSession() as session:
-        a = Automobile()
+        a = Automobile(auto_id=str(uuid.UUID(int=r.getrandbits(128), version=4)),
+                       driver_id=str(uuid.UUID(int=r.getrandbits(128), version=4)),
+                       position=(r.randint(-180, 180), r.randint(-90, 90)))
         while True:
             try:
                 if a.balance <= 0:
@@ -35,32 +40,32 @@ async def process():
                     a.velocity = 0
                     a.balance -= 2000
                 # https://158.160.156.231
-                resp = await session.post(os.environ.get("SERVER_HOST", 'https://localhost'), json=dataclasses.asdict(a), ssl=False)
+                resp = await session.post(os.environ.get("SERVER_HOST", 'https://localhost'),
+                                          json=dataclasses.asdict(a), ssl=False)
 
                 print(await resp.text())
 
-                a.velocity += min(max(0.0, random.randint(-5, 5)), 200)
+                a.velocity += min(max(0.0, r.randint(-5, 5)), 200)
 
                 a.fuel -= max(math.fabs(a.velocity) * 2, 0.0)
 
-                new_pos_0 = a.position[0] + random.uniform(-0.1, 0.1)
+                new_pos_0 = a.position[0] + r.uniform(-0.1, 0.1)
 
                 if new_pos_0 < -180:
                     new_pos_0 %= 180
                 elif new_pos_0 > 180:
                     new_pos_0 %= -180
 
-                new_pos_1 = a.position[1] + random.uniform(-0.1, 0.1)
+                new_pos_1 = a.position[1] + r.uniform(-0.1, 0.1)
 
-                if new_pos_1 < -85:
-                    new_pos_1 %= 85
-                elif new_pos_1 > 85:
-                    new_pos_1 %= -85
+                if new_pos_1 < -90:
+                    new_pos_1 %= 90
+                elif new_pos_1 > 90:
+                    new_pos_1 %= -90
 
                 a.position = new_pos_0, new_pos_1
 
                 await asyncio.sleep(0.1)
-                break
             except asyncio.CancelledError:
                 break
 
@@ -69,8 +74,8 @@ async def main():
     global all_tasks
     try:
         tasks = []
-        for _ in range(1):
-            tasks.append(asyncio.create_task(process()))
+        for i in range(5):
+            tasks.append(asyncio.create_task(process(i)))
 
         all_tasks = asyncio.gather(*tasks)
         await all_tasks

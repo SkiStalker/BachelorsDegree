@@ -3,6 +3,7 @@ import {Box, Tab, Tabs, Typography} from "@mui/material";
 import RequestsPanel from "@/components/tabPanel/RequestsPanel";
 import CPUPanel from "@/components/tabPanel/CPUPanel";
 import PodsPanel from "@/components/tabPanel/PodsPanel";
+import DataPanel from "@/components/tabPanel/DataPanel";
 
 interface TabPanelProps {
     children?: React.ReactNode;
@@ -41,6 +42,7 @@ const TabPanel = () => {
                 <Tabs value={curTab} onChange={(event, value) => {
                     setCurTab(value)
                 }}>
+                    <Tab label="Полученные данные"/>
                     <Tab label="Запросы в секунду"/>
                     <Tab label="Использование CPU"/>
                     <Tab label="Количество POD's"/>
@@ -49,14 +51,18 @@ const TabPanel = () => {
             </Box>
 
             <CustomTabPanel index={0} value={curTab}>
-                <RequestsPanel/>
+                <DataPanel/>
             </CustomTabPanel>
 
             <CustomTabPanel index={1} value={curTab}>
-                <CPUPanel/>
+                <RequestsPanel/>
             </CustomTabPanel>
 
             <CustomTabPanel index={2} value={curTab}>
+                <CPUPanel/>
+            </CustomTabPanel>
+
+            <CustomTabPanel index={3} value={curTab}>
                 <PodsPanel/>
             </CustomTabPanel></>
     );

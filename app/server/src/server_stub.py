@@ -1,8 +1,6 @@
-import asyncio
-import json
+import datetime
 import logging
 import os
-import random
 import sys
 import ssl
 import asyncpg
@@ -19,10 +17,15 @@ routes = web.RouteTableDef()
 async def write_auto_info(request: web.Request):
     if request.body_exists:
         json_data = await request.json()
-        res = await app[pg_db_connect].execute(
-            f'INSERT INTO auto_info (auto_id, fuel, balance, velocity, positionx, positiony) '
-            f'VALUES (\'{json_data["auto_id"]}\', {json_data["fuel"]}, {json_data["balance"]}, {json_data["velocity"]},'
-            f' {json_data["position"][0]}, {json_data["position"][1]})')
+        async with app[pg_db_pool].acquire() as conn:
+            exec_str = (
+                f'INSERT INTO auto_info (auto_id, driver_id, fuel, balance, velocity, positionx, positiony, created_at) '
+                f'VALUES (\'{json_data["auto_id"]}\', \'{json_data["driver_id"]}\', {json_data["fuel"]}, '
+                f'{json_data["balance"]}, '
+                f'{json_data["velocity"]}, {json_data["position"][0]}, {json_data["position"][1]}, '
+                f'\'{datetime.datetime.now()}\')')
+
+            res = await conn.execute(exec_str)
 
         logger.info(res)
 
@@ -33,15 +36,15 @@ async def write_auto_info(request: web.Request):
 
 
 async def background_tasks(cur_app: web.Application):
-    cur_app[pg_db_connect] = await asyncpg.connect(host=os.environ.get('PG_HOST', "localhost"),
-                                                   port=os.environ.get('PG_PORT', 5432),
-                                                   user=os.environ.get('PG_USER', "postgres"),
-                                                   password=os.environ.get('PG_PASSWORD', "pgpass"),
-                                                   database=os.environ.get('PG_DATABASE', "postgres"))
+    cur_app[pg_db_pool] = await asyncpg.create_pool(host=os.environ.get('PG_HOST', "localhost"),
+                                                    port=os.environ.get('PG_PORT', 5432),
+                                                    user=os.environ.get('PG_USER', "postgres"),
+                                                    password=os.environ.get('PG_PASSWORD', "pgpass"),
+                                                    database=os.environ.get('PG_DATABASE', "postgres"))
 
     yield
 
-    await cur_app[pg_db_connect].close()
+    await cur_app[pg_db_pool].close()
 
 
 if __name__ == '__main__':
@@ -61,7 +64,7 @@ if __name__ == '__main__':
     ssl_context.load_cert_chain(os.environ.get("HOST_CERT_PATH", "./domain.crt"),
                                 os.environ.get("HOST_KEY_PATH", "./domain.key"))
 
-    pg_db_connect = web.AppKey("pg_db_connect", asyncpg.Connection)
+    pg_db_pool = web.AppKey("pg_db_pool", asyncpg.Pool)
 
     app.cleanup_ctx.append(background_tasks)
 

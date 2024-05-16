@@ -5,16 +5,41 @@ import logging
 import os
 import sys
 import time
+import typing
 from contextvars import ContextVar
 from functools import wraps, partial
 import re
 import statistics
 
+import asyncpg
 import kubernetes
 from kubernetes import client, config
 
 import prometheus_api_client
 from aiohttp import web
+
+
+def ignore_exception(ignored_exception: typing.Type[Exception] = Exception, default_value: typing.Any | None = None):
+    def dec(function):
+        def _dec(*args, **kwargs):
+            try:
+                return function(*args, **kwargs)
+            except ignored_exception:
+                return default_value
+
+        return _dec
+
+    return dec
+
+
+def to_json_serializable(obj: typing.Any) -> typing.Any | str:
+    if ignore_exception(TypeError)(json.dumps)(obj) is None:
+        return str(obj)
+    return obj
+
+
+def try_parse_int(s: str) -> int | None:
+    return ignore_exception(ValueError)(int)(s)
 
 
 def async_wrap(func):
@@ -83,6 +108,59 @@ async def get_cpu_stat(request: web.Request):
     res = prom.custom_query('increase(process_cpu_seconds_total[1m])')
 
     return web.json_response({"values": res})
+
+
+@routes.get("/api/v1/auto_info")
+async def get_auto_info(request: web.Request):
+    query = request.query
+    offset = query.get('offset', 0)
+
+    if (offset := try_parse_int(offset)) is None:
+        return web.json_response({"error": f"Incorrect offset value `{offset}`"}, status=400)
+
+    limit = query.get('limit', 10)
+
+    if (limit := try_parse_int(limit)) is None:
+        return web.json_response({"error": f"Incorrect limit value `{limit}`"}, status=400)
+
+    order_field = query.get('order_field', "created_at")
+    if order_field not in app[available_order_fields]:
+        return web.json_response({"error": f"Incorrect order field `{order_field}`"}, status=400)
+
+    order_direction = query.get('order_direction', 'desc')
+    if order_direction not in app[available_order_directions]:
+        return web.json_response({"error": f"Incorrect order direction `{order_direction}`"}, status=400)
+
+    filter_field = query.get('filter_field', None)
+
+    if filter_field is not None:
+        if filter_field not in app[available_order_fields]:
+            return web.json_response({"error": f"Incorrect filer value `{filter_field}`"}, status=400)
+
+    filter_value = query.get('filter_value', None)
+
+    if filter_value is None and filter_field is not None:
+        return web.json_response({"error": f"Filter field `{filter_field}` passed, but no value was provided"},
+                                 status=400)
+    elif filter_value is not None and filter_field is None:
+        return web.json_response({"error": f"Filter value `{filter_value}` passed, but no field was provided"},
+                                 status=400)
+
+    async with app[pg_db_pool].acquire() as conn:
+        conn: asyncpg.Connection = conn
+
+        fetch_str = f'SELECT *, COUNT(*) as count FROM auto_info WHERE 1=1 '
+
+        where_str = f" AND CAST ({filter_field} AS TEXT) LIKE '%{filter_value}%' " if filter_field is not None else " "
+
+        group_by_str = " GROUP BY id, auto_id, driver_id, positiony, positionx, fuel, balance, velocity, created_at "
+
+        off_limit_order_srt = f" ORDER BY {order_field} {order_direction.upper()} OFFSET {offset} LIMIT {limit}"
+
+        resp = await conn.fetch(fetch_str + where_str + group_by_str+  off_limit_order_srt)
+
+    return web.json_response(
+        {"data": [dict({key: to_json_serializable(value) for key, value in row.items()}) for row in resp]})
 
 
 @routes.get("/api/v1/pods_count")
@@ -249,6 +327,14 @@ def listen_prometheus(cur_app: web.Application):
             logger.error(e)
 
 
+async def config_app(cur_app: web.Application):
+    cur_app[available_order_fields] = ["id", "auto_id", "positionx", "positiony", "fuel", "balance", "velocity",
+                                       "created_at", "driver_id"]
+    cur_app[available_order_directions] = ["asc", "desc"]
+
+    yield
+
+
 async def background_tasks(cur_app: web.Application):
     cur_app[prom_api_client] = prometheus_api_client.PrometheusConnect(
         os.environ.get("PROMETHEUS_HOST", "http://localhost:8080"), disable_ssl=True)
@@ -260,6 +346,12 @@ async def background_tasks(cur_app: web.Application):
     cur_app[kube_apps_api_client] = client.AppsV1Api()
     cur_app[kube_core_api_client] = client.CoreV1Api()
 
+    cur_app[pg_db_pool] = await asyncpg.create_pool(host=os.environ.get('PG_HOST', "localhost"),
+                                                    port=os.environ.get('PG_PORT', 5432),
+                                                    user=os.environ.get('PG_USER', "postgres"),
+                                                    password=os.environ.get('PG_PASSWORD', "pgpass"),
+                                                    database=os.environ.get('PG_DATABASE', "postgres"))
+
     yield
 
     is_alive.get().value = False
@@ -270,6 +362,8 @@ async def background_tasks(cur_app: web.Application):
 
     cur_app[kube_apps_api_client].api_client.close()
     cur_app[kube_core_api_client].api_client.close()
+
+    await cur_app[pg_db_pool].close()
 
 
 if __name__ == '__main__':
@@ -293,7 +387,13 @@ if __name__ == '__main__':
     kube_apps_api_client = web.AppKey("kube_apps_api_client", client.AppsV1Api)
     kube_core_api_client = web.AppKey("kube_core_api_client", client.CoreV1Api)
 
+    available_order_fields = web.AppKey("available_order_fields", list[str])
+    available_order_directions = web.AppKey("available_order_directions", list[str])
+
+    pg_db_pool = web.AppKey("pg_db_pool", asyncpg.Pool)
+
     app.cleanup_ctx.append(background_tasks)
+    app.cleanup_ctx.append(config_app)
 
     app.add_routes(routes)
 
