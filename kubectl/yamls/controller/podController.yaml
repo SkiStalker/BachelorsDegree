@@ -15,7 +15,7 @@ spec:
           protocol: TCP
       env:
         - name: PROMETHEUS_HOST
-          value: http://10.1.129.21:9090
+          value: http://10.1.128.15:9090
         - name: PG_HOST
           value: 10.1.128.17
   restartPolicy: Always
