@@ -11,7 +11,7 @@ import {
     Typography
 } from "@mui/material";
 import {useEffect, useState} from "react";
-import {AutoDataType} from "@/types/autoDataTypes";
+import {AutoDataResponse, AutoDataType} from "@/types/autoDataTypes";
 import TablePaginationActions from "@mui/material/TablePagination/TablePaginationActions";
 import CloseIcon from "@mui/icons-material/Close";
 import {getAutoInfo} from "@/api/dataAutoApi";
@@ -35,7 +35,7 @@ const DataPanel = () => {
 
     const [rowsPerPage, setRowsPerPage] = useState<number>(10)
 
-    const [data, setData] = useState<AutoDataType[]>([])
+    const [data, setData] = useState<AutoDataResponse | undefined>(undefined)
 
     const [completedFilterValue, setCompletedFilterValue] = useState<string>("")
 
@@ -54,7 +54,7 @@ const DataPanel = () => {
             order_direction: orderDirection,
             order_field: orderField,
         }).then((data) => {
-            setData(data.data.data)
+            setData(data.data)
 
             setIsLoading(false)
         }).catch((err) => {
@@ -63,11 +63,11 @@ const DataPanel = () => {
 
     }, [page, rowsPerPage, filterField, completedFilterValue, orderDirection, orderField]);
 
-    return (<Stack spacing={3} sx={{height: "70vh"}}>
+    return (<Stack spacing={5} sx={{height: "70vh"}}>
         <Stack direction={"row"} spacing={3}>
             <Typography sx={{alignSelf: "center"}}>Фильтр</Typography>
             <FormControl sx={{minWidth: "300px"}}>
-                <InputLabel sx={{display: filterField ? "none" : undefined}}>
+                <InputLabel sx={{ background: "white"}}>
                     Выберите поле для фильтрации
                 </InputLabel>
                 <Select
@@ -122,7 +122,7 @@ const DataPanel = () => {
         <Stack direction={"row"} spacing={3}>
             <Typography sx={{alignSelf: "center"}}>Сортировка</Typography>
             <FormControl sx={{minWidth: "300px"}}>
-                <InputLabel>
+                <InputLabel sx={{ background: "white"}}>
                     Выберите поле для сортировки
                 </InputLabel>
                 <Select
@@ -146,7 +146,7 @@ const DataPanel = () => {
             </FormControl>
 
             <FormControl sx={{minWidth: "200px"}}>
-                <InputLabel>
+                <InputLabel sx={{ background: "white"}}>
                     Выберите порядок сортировки
                 </InputLabel>
                 <Select
@@ -186,7 +186,7 @@ const DataPanel = () => {
                     </TableHead>
                     <TableBody>
 
-                        {data.map((item) => {
+                        {data?.data?.map((item) => {
                             return (
                                 <TableRow key={item.id}>
                                     <StyledTableCell>{item.id}</StyledTableCell>
@@ -209,7 +209,9 @@ const DataPanel = () => {
                     <TableFooter>
                         <TableRow>
                             <TablePagination
-                                count={data?.at(0)?.count || 0}
+                                showFirstButton={true}
+                                showLastButton={true}
+                                count={data?.count || 0}
                                 rowsPerPage={rowsPerPage}
                                 rowsPerPageOptions={[5, 10, 20]}
                                 page={page}
@@ -219,6 +221,7 @@ const DataPanel = () => {
 
                                 onRowsPerPageChange={(e) => {
                                     setRowsPerPage(Number(e.target.value))
+                                    setPage(0)
                                 }}
 
                             />

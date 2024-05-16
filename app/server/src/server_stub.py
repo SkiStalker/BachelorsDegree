@@ -70,6 +70,6 @@ if __name__ == '__main__':
 
     port = os.environ.get('HOST_PORT', '443')
 
-    host = os.environ.get("HOST_IP", "localhost")
+    host = os.environ.get("HOST_IP", "0.0.0.0")
 
     web.run_app(app, host=host, port=int(port), ssl_context=ssl_context)

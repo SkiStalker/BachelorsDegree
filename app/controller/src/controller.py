@@ -149,18 +149,21 @@ async def get_auto_info(request: web.Request):
     async with app[pg_db_pool].acquire() as conn:
         conn: asyncpg.Connection = conn
 
-        fetch_str = f'SELECT *, COUNT(*) as count FROM auto_info WHERE 1=1 '
+        fetch_str = f'SELECT * FROM auto_info WHERE 1=1 '
+
+        conn_fetch_str = f"SELECT COUNT(*) FROM auto_info WHERE 1=1 "
 
         where_str = f" AND CAST ({filter_field} AS TEXT) LIKE '%{filter_value}%' " if filter_field is not None else " "
 
-        group_by_str = " GROUP BY id, auto_id, driver_id, positiony, positionx, fuel, balance, velocity, created_at "
-
         off_limit_order_srt = f" ORDER BY {order_field} {order_direction.upper()} OFFSET {offset} LIMIT {limit}"
 
-        resp = await conn.fetch(fetch_str + where_str + group_by_str+  off_limit_order_srt)
+        resp = await conn.fetch(fetch_str + where_str + off_limit_order_srt)
+
+        resp_cnt = await conn.fetch(conn_fetch_str + where_str)
 
     return web.json_response(
-        {"data": [dict({key: to_json_serializable(value) for key, value in row.items()}) for row in resp]})
+        {"data": [dict({key: to_json_serializable(value) for key, value in row.items()}) for row in resp],
+         "count": resp_cnt[0]["count"]})
 
 
 @routes.get("/api/v1/pods_count")

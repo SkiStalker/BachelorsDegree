@@ -39,8 +39,7 @@ async def process(ind: int):
                     a.fuel = 100
                     a.velocity = 0
                     a.balance -= 2000
-                # https://158.160.156.231
-                resp = await session.post(os.environ.get("SERVER_HOST", 'https://localhost'),
+                resp = await session.post(os.environ.get("SERVER_HOST", 'https://158.160.163.0'),
                                           json=dataclasses.asdict(a), ssl=False)
 
                 print(await resp.text())

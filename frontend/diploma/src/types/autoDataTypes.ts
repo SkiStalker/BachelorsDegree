@@ -1,6 +1,5 @@
 export interface AutoDataType {
     id: number,
-    count: number,
     auto_id: string,
     driver_id: string,
     positionx: number,
@@ -9,6 +8,11 @@ export interface AutoDataType {
     balance: number,
     velocity: number
     created_at: string,
+}
+
+export interface AutoDataResponse {
+    data: AutoDataType[],
+    count: number
 }
 
 

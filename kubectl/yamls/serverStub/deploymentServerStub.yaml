@@ -24,3 +24,8 @@ spec:
         image: cr.yandex/crplcjja2vnksfnhmpdj/server:latest
         ports:
         - containerPort: 443
+        env:
+          - name: PG_HOST
+            value: 10.1.128.17
+          - name: HOST_IP
+            value: 0.0.0.0
