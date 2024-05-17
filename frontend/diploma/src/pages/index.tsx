@@ -7,7 +7,7 @@ import TabPanel from "@/components/tabPanel/TabPanel";
 const MainPage = () => {
     return (<Stack height={"100%"} width={"100%"}>
         <Stack direction={"row"}>
-            <Link href={"/config.yaml"}>
+            <Link href={"/config"}>
                 <IconButton>
                     <SettingsIcon/>
                     <Typography sx={{paddingLeft: "10px"}}>
