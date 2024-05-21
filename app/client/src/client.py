@@ -73,8 +73,9 @@ async def main():
     global all_tasks
     try:
         tasks = []
-        for i in range(5):
+        for i in range(10):
             tasks.append(asyncio.create_task(process(i)))
+            await asyncio.sleep(10)
 
         all_tasks = asyncio.gather(*tasks)
         await all_tasks
