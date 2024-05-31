@@ -1,8 +1,0 @@
-FOR /F "tokens=* USEBACKQ" %i IN (`yc config get folder-id`) DO set FOLDER=%i && ^
-set ZONE=ru-central1-d && ^
-FOR /F "tokens=* USEBACKQ" %i IN (`yc iam service-account get kuber-sa --format json ^| jq -r ".id"`) DO set SA=%i && ^
-FOR /F "tokens=* USEBACKQ" %i IN (`yc vpc network get institute --format json ^| jq -r ".id"`) DO set NETWORK=%i && ^
-FOR /F "tokens=* USEBACKQ" %i IN (`yc vpc subnet get sub-d --format json ^| jq -r ".id"`) DO set SUBNET=%i && ^
-FOR /F "tokens=* USEBACKQ" %i IN (`yc vpc sg get k8s-institute --format json ^| jq -r ".id"`) DO set SG=%i && ^
-FOR /F "tokens=* USEBACKQ" %i IN (`yc kms symmetric-key get k8s-institute --format json ^| jq -r ".id"`) DO set KMS=%i && ^
-FOR /F "tokens=* USEBACKQ" %i IN (`yc container registry get institute-registry --format=json ^| jq -r ".id"`) DO set REGISTRY=%i
